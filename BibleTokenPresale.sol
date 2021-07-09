@@ -647,6 +647,9 @@ interface IBEP20 {
     event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
+/**
+ * @dev Contract that presales BIBLE Token.
+ */
 contract BibleTokenPresale is ReentrancyGuard {
     using SafeMath for uint256;
     using SafeBEP20 for IBEP20;
@@ -656,26 +659,27 @@ contract BibleTokenPresale is ReentrancyGuard {
     // The number of unclaimed tokens the user has
     mapping (address => uint256) public tokensUnclaimed;
 
+    // BIBLE token
+    IBEP20 BIBLE;
+    // USDC token
+    IBEP20 USDC;
+
     // Sale active
     bool isSaleActive;
     // Claim active
     bool isClaimActive;
     // Starting timestamp
     uint256 startingTimeStamp;
+
     // Total BIBLE sold
     uint256 totalTokensSold = 0;
+    // Price of presale BIBLE, 3 USDC
+    uint256 USDCPerToken = 3;
+    // Amount of USDC received in presale
+    uint256 usdcReceived = 0;
 
-    // BIBLE token
-    IBEP20 BIBLE;
-    // WMATIC token
-    IBEP20 WMATIC;
-    // Price of presale BIBLE, 1 WMATIC
-    uint256 MATICPerToken = 1;
-    // Amount of WMATIC received in presale
-    uint256 maticReceived = 0;
-
+    // Ownable
     address payable owner;
-
     modifier onlyOwner(){
         require(msg.sender == owner, "You're not the owner");
         _;
@@ -684,34 +688,38 @@ contract BibleTokenPresale is ReentrancyGuard {
     event TokenBuy(address user, uint256 tokens);
     event TokenClaim(address user, uint256 tokens);
 
-    constructor (address _BIBLE, address _MATIC, uint256 _startingTimestamp) public {
+    constructor (address _BIBLE, address _USDC, uint256 _startingTimestamp) public {
         BIBLE = IBEP20(_BIBLE);
-        WMATIC = IBEP20(_MATIC);
+        USDC = IBEP20(_USDC);
         isSaleActive = true;
-        owner = msg.sender;
         startingTimeStamp = _startingTimestamp;
+        owner = msg.sender;
     }
 
-    function buy (uint256 _amount, address beneficiary) public nonReentrant {
+    function buy(uint256 _amount, address beneficiary) public nonReentrant {
         require(isSaleActive, "Presale has not started");
-        require(!(Address.isContract(msg.sender)), "Bots not allowed"); // BIBLE
 
         address _buyer = beneficiary;
-        uint256 tokens = _amount.div(MATICPerToken);
+        uint256 amount = _amount.mul(1e12); // because the decimal of USDC is 6.
+        uint256 tokens = amount.div(USDCPerToken);
 
-        require (
-            maticReceived +  _amount <= 144000 ether,
+        require(
+            usdcReceived + amount <= 432000 ether, // 144000 * USDCPerToken * 10**18
             "Then I heard the number of those who were sealed: 144,000 from all the tribes of Israel."
         );
         require(block.timestamp >= startingTimeStamp, "Presale has not started");
 
-        WMATIC.safeTransferFrom(beneficiary, address(this), _amount);
+        USDC.safeTransferFrom(beneficiary, address(this), _amount);
 
         tokensOwned[_buyer] = tokensOwned[_buyer].add(tokens);
         tokensUnclaimed[_buyer] = tokensUnclaimed[_buyer].add(tokens);
         totalTokensSold = totalTokensSold.add(tokens);
-        maticReceived = maticReceived.add(_amount);
+        usdcReceived = usdcReceived.add(amount);
         emit TokenBuy(beneficiary, tokens);
+    }
+
+    function setStartingTimeStamp(uint256 _startingTimeStamp) external onlyOwner {
+        startingTimeStamp = _startingTimeStamp;
     }
 
     function setSaleActive(bool _isSaleActive) external onlyOwner {
@@ -740,13 +748,13 @@ contract BibleTokenPresale is ReentrancyGuard {
         require (tokensUnclaimed[msg.sender] > 0, "User should have unclaimed BIBLE tokens");
         require (BIBLE.balanceOf(address(this)) >= tokensUnclaimed[msg.sender], "There are not enough BIBLE tokens to transfer.");
 
-        tokensUnclaimed[msg.sender] = 0;
         BIBLE.safeTransfer(msg.sender, tokensUnclaimed[msg.sender]);
         emit TokenClaim(msg.sender, tokensUnclaimed[msg.sender]);
+        tokensUnclaimed[msg.sender] = 0;
     }
 
     function withdrawFunds() external onlyOwner {
-        WMATIC.safeTransfer(msg.sender, WMATIC.balanceOf(address(this)));
+        USDC.safeTransfer(msg.sender, USDC.balanceOf(address(this)));
     }
 
     function withdrawUnsoldBIBLE() external onlyOwner {
